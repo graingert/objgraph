@@ -1000,8 +1000,9 @@ def _show_graph(objs, edge_func, swap_source_target,
             continue
         if cull_func is not None and cull_func(target):
             continue
-        neighbours = edge_func(target)
-        ignore.add(id(neighbours))
+        edges = edge_func(target)
+        ignore.add(id(edges))
+        neighbours = {id(v): v for v in edges}.values()
         n = 0
         skipped = 0
         for source in neighbours:
@@ -1016,9 +1017,9 @@ def _show_graph(objs, edge_func, swap_source_target,
                 srcnode, tgtnode = target, source
             else:
                 srcnode, tgtnode = source, target
-            elabel = _edge_label(srcnode, tgtnode, shortnames)
-            f.write('  %s -> %s%s;\n' % (_obj_node_id(srcnode),
-                                         _obj_node_id(tgtnode), elabel))
+            for elabel in _edge_labels(srcnode, tgtnode, shortnames):
+                f.write('  %s -> %s%s;\n' % (_obj_node_id(srcnode),
+                                             _obj_node_id(tgtnode), elabel))
             if id(source) not in depth:
                 depth[id(source)] = tdepth + 1
                 queue.append(source)
@@ -1208,43 +1209,47 @@ def _gradient(start_color, end_color, depth, max_depth):
     return h, s, v
 
 
-def _edge_label(source, target, shortnames=True):
+def _edge_labels(source, target, shortnames=True):
     if (_isinstance(target, dict)
             and target is getattr(source, '__dict__', None)):
-        return ' [label="__dict__",weight=10]'
+        return [' [label="__dict__",weight=10]']
     if _isinstance(source, types.FrameType):
         if target is source.f_locals:
-            return ' [label="f_locals",weight=10]'
+            return [' [label="f_locals",weight=10]']
         if target is source.f_globals:
-            return ' [label="f_globals",weight=10]'
+            return [' [label="f_globals",weight=10]']
     if _isinstance(source, types.MethodType):
         try:
             if target is source.__self__:
-                return ' [label="__self__",weight=10]'
+                return [' [label="__self__",weight=10]']
             if target is source.__func__:
-                return ' [label="__func__",weight=10]'
+                return [' [label="__func__",weight=10]']
         except AttributeError:  # pragma: nocover
             # Python < 2.6 compatibility
             if target is source.im_self:
-                return ' [label="im_self",weight=10]'
+                return [' [label="im_self",weight=10]']
             if target is source.im_func:
-                return ' [label="im_func",weight=10]'
+                return [' [label="im_func",weight=10]']
     if _isinstance(source, types.FunctionType):
-        for k in dir(source):
-            if target is getattr(source, k):
-                return ' [label="%s",weight=10]' % _quote(k)
+        return [
+            ' [label="%s",weight=10]' % _quote(k)
+            for k in dir(source)
+            if target is getattr(source, k)
+        ] or ['']
     if _isinstance(source, dict):
-        for k, v in iteritems(source):
-            if v is target:
-                if _isinstance(k, basestring) and _is_identifier(k):
-                    return ' [label="%s",weight=2]' % _quote(k)
-                else:
-                    if shortnames:
-                        tn = _short_typename(k)
-                    else:
-                        tn = _long_typename(k)
-                    return ' [label="%s"]' % _quote(tn + "\n" + _safe_repr(k))
-    return ''
+        tn = _short_typename if shortnames else _long_typename
+        return [
+            (
+                ' [label="%s",weight=2]' % _quote(k)
+                if _isinstance(k, basestring) and _is_identifier(k)
+                else (
+                    ' [label="%s"]' % _quote(tn(k) + "\n" + _safe_repr(k))
+                )
+            )
+            for k, v in iteritems(source)
+            if v is target
+        ] or ['']
+    return ['']
 
 
 _is_identifier = re.compile('[a-zA-Z_][a-zA-Z_0-9]*$').match
